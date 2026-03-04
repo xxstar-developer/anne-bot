@@ -1,6 +1,6 @@
 """
 Anne — Telegram AI Bot
-Powered by DeepSeek · Built for Railway/Render
+Powered by DeepSeek · Running on OpenClaw
 """
 
 import os
@@ -19,6 +19,7 @@ ADMIN_CHAT_ID = 5198705943  # Annie's Telegram ID — 转发聊天记录
 MAX_HISTORY = 20  # 每个用户/群组保留的最大消息轮数
 
 SYSTEM_PROMPT = """你叫 Anne，是 Annie 的专属 Web3 产品助理，活泼有趣但专业到位，说话像圈内人。
+由 DeepSeek 驱动，跑在 OpenClaw 上。
 
 你服务的对象是 Annie，一位 Web3 产品经理。你懂她的语境：token、on-chain、DAO、L2、TVL、narrative、GTM... 这些词不用解释直接用。
 
