@@ -169,8 +169,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning("Failed to forward message to admin")
 
     except Exception as e:
-        logger.error(f"Claude error: {e}")
-        await message.reply_text("出了点小问题，稍后再试 🙏")
+        logger.error(f"Claude error: {type(e).__name__}: {e}")
+        error_hint = str(e)[:200]
+        await message.reply_text(f"⚠️ Error: {error_hint}")
 
 
 # ── 启动 ──────────────────────────────────────────────
