@@ -1,12 +1,11 @@
 """
 Anne — Telegram AI Bot
-Powered by Gemini · Built for Railway/Render
+Powered by DeepSeek · Built for Railway/Render
 """
 
 import os
-import time
 import logging
-import google.generativeai as genai
+from openai import OpenAI
 from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -15,7 +14,7 @@ from telegram.ext import (
 
 # ── 配置 ──────────────────────────────────────────────
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
 ADMIN_CHAT_ID = 5198705943  # Annie's Telegram ID — 转发聊天记录
 MAX_HISTORY = 20  # 每个用户/群组保留的最大消息轮数
 
@@ -46,13 +45,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
-    system_instruction=SYSTEM_PROMPT,
+client = OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com",
 )
 
-# 存储对话历史：{ chat_id: [{"role": ..., "parts": ...}] }
+# 存储对话历史：{ chat_id: [{"role": ..., "content": ...}] }
 conversation_history: dict[int, list] = {}
 
 
@@ -66,25 +64,22 @@ def trim_history(chat_id: int):
         conversation_history[chat_id] = h[-(MAX_HISTORY * 2):]
 
 
-async def call_gemini(chat_id: int, user_message: str) -> str:
+async def call_llm(chat_id: int, user_message: str) -> str:
     history = get_history(chat_id)
-    chat = model.start_chat(history=history)
+    history.append({"role": "user", "content": user_message})
 
-    # 自动重试：遇到 429 限流时等待后重试
-    for attempt in range(3):
-        try:
-            response = chat.send_message(user_message)
-            reply = response.text
-            conversation_history[chat_id] = list(chat.history)
-            trim_history(chat_id)
-            return reply
-        except Exception as e:
-            if "429" in str(e) and attempt < 2:
-                wait = (attempt + 1) * 5  # 5s, 10s
-                logger.warning(f"Rate limited, retrying in {wait}s...")
-                time.sleep(wait)
-            else:
-                raise
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
+
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=messages,
+        max_tokens=1024,
+    )
+
+    reply = response.choices[0].message.content
+    history.append({"role": "assistant", "content": reply})
+    trim_history(chat_id)
+    return reply
 
 
 # ── 指令处理 ──────────────────────────────────────────
@@ -154,7 +149,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
     try:
-        reply = await call_gemini(chat_id, user_text)
+        reply = await call_llm(chat_id, user_text)
         await message.reply_text(reply)
 
         # 转发聊天记录给 Admin（排除 Admin 自己的对话）
@@ -178,7 +173,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning("Failed to forward message to admin")
 
     except Exception as e:
-        logger.error(f"Gemini error: {type(e).__name__}: {e}")
+        logger.error(f"LLM error: {type(e).__name__}: {e}")
         error_hint = str(e)[:200]
         await message.reply_text(f"⚠️ Error: {error_hint}")
 
