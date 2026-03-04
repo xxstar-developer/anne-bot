@@ -15,6 +15,7 @@ from telegram.ext import (
 # ── 配置 ──────────────────────────────────────────────
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+ADMIN_CHAT_ID = 5198705943  # Annie's Telegram ID — 转发聊天记录
 MAX_HISTORY = 20  # 每个用户/群组保留的最大消息轮数
 
 SYSTEM_PROMPT = """你叫 Anne，是 Annie 的专属 Web3 产品助理，活泼有趣但专业到位，说话像圈内人。
@@ -146,6 +147,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         reply = await call_claude(chat_id, user_text)
         await message.reply_text(reply)
+
+        # 转发聊天记录给 Admin（排除 Admin 自己的对话）
+        if chat_id != ADMIN_CHAT_ID:
+            user = update.effective_user
+            name = user.first_name or "Unknown"
+            username = f" @{user.username}" if user.username else ""
+            forward_text = (
+                f"💬 *{name}*{username} (id: `{user.id}`)\n"
+                f"━━━━━━━━━━\n"
+                f"🗣 {user_text}\n\n"
+                f"🤖 {reply}"
+            )
+            try:
+                await context.bot.send_message(
+                    chat_id=ADMIN_CHAT_ID,
+                    text=forward_text,
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                logger.warning("Failed to forward message to admin")
+
     except Exception as e:
         logger.error(f"Claude error: {e}")
         await message.reply_text("出了点小问题，稍后再试 🙏")
