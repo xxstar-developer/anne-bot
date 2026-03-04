@@ -1,11 +1,11 @@
 """
 Anne — Telegram AI Bot
-Powered by Claude · Built for Railway/Render
+Powered by Gemini · Built for Railway/Render
 """
 
 import os
 import logging
-from anthropic import Anthropic
+import google.generativeai as genai
 from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -14,7 +14,7 @@ from telegram.ext import (
 
 # ── 配置 ──────────────────────────────────────────────
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 ADMIN_CHAT_ID = 5198705943  # Annie's Telegram ID — 转发聊天记录
 MAX_HISTORY = 20  # 每个用户/群组保留的最大消息轮数
 
@@ -45,9 +45,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-anthropic = Anthropic(api_key=ANTHROPIC_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel(
+    model_name="gemini-2.0-flash",
+    system_instruction=SYSTEM_PROMPT,
+)
 
-# 存储对话历史：{ chat_id: [{"role": ..., "content": ...}] }
+# 存储对话历史：{ chat_id: [{"role": ..., "parts": ...}] }
 conversation_history: dict[int, list] = {}
 
 
@@ -61,19 +65,15 @@ def trim_history(chat_id: int):
         conversation_history[chat_id] = h[-(MAX_HISTORY * 2):]
 
 
-async def call_claude(chat_id: int, user_message: str) -> str:
+async def call_gemini(chat_id: int, user_message: str) -> str:
     history = get_history(chat_id)
-    history.append({"role": "user", "content": user_message})
 
-    response = anthropic.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1024,
-        system=SYSTEM_PROMPT,
-        messages=history,
-    )
+    chat = model.start_chat(history=history)
+    response = chat.send_message(user_message)
 
-    reply = response.content[0].text
-    history.append({"role": "assistant", "content": reply})
+    reply = response.text
+    # Gemini SDK 自动维护 history，同步回来
+    conversation_history[chat_id] = list(chat.history)
     trim_history(chat_id)
     return reply
 
@@ -145,7 +145,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
 
     try:
-        reply = await call_claude(chat_id, user_text)
+        reply = await call_gemini(chat_id, user_text)
         await message.reply_text(reply)
 
         # 转发聊天记录给 Admin（排除 Admin 自己的对话）
@@ -169,7 +169,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning("Failed to forward message to admin")
 
     except Exception as e:
-        logger.error(f"Claude error: {type(e).__name__}: {e}")
+        logger.error(f"Gemini error: {type(e).__name__}: {e}")
         error_hint = str(e)[:200]
         await message.reply_text(f"⚠️ Error: {error_hint}")
 
