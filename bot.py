@@ -4,6 +4,7 @@ Powered by Gemini · Built for Railway/Render
 """
 
 import os
+import time
 import logging
 import google.generativeai as genai
 from telegram import Update, BotCommand
@@ -67,15 +68,23 @@ def trim_history(chat_id: int):
 
 async def call_gemini(chat_id: int, user_message: str) -> str:
     history = get_history(chat_id)
-
     chat = model.start_chat(history=history)
-    response = chat.send_message(user_message)
 
-    reply = response.text
-    # Gemini SDK 自动维护 history，同步回来
-    conversation_history[chat_id] = list(chat.history)
-    trim_history(chat_id)
-    return reply
+    # 自动重试：遇到 429 限流时等待后重试
+    for attempt in range(3):
+        try:
+            response = chat.send_message(user_message)
+            reply = response.text
+            conversation_history[chat_id] = list(chat.history)
+            trim_history(chat_id)
+            return reply
+        except Exception as e:
+            if "429" in str(e) and attempt < 2:
+                wait = (attempt + 1) * 5  # 5s, 10s
+                logger.warning(f"Rate limited, retrying in {wait}s...")
+                time.sleep(wait)
+            else:
+                raise
 
 
 # ── 指令处理 ──────────────────────────────────────────
